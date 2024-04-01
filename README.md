@@ -13,7 +13,7 @@ For a detailed understanding, refer to our paper: ["Modular Indexer: Fully User-
 
 
 ## What is modular-indexer-committee?
-modular-indexer-committee serves as a key component of Modular Indexer, and is responsible for reading each block of Bitcoin, calculating protocol states, and summarizing these states as a polynomial commitment namely checkpoint. Whenever the modular-indexer-committee obtains a new Bitcoin block, it generates a new checkpoint for the protocol and publishes it to the data availability layer for users to access. It is permissionless; anyone can operate its modular-indexer-committee for a given meta-protocol.
+Modular-indexer-committee serves as a key component of Modular Indexer, and is responsible for reading each block of Bitcoin, calculating protocol states, and summarizing these states as a polynomial commitment namely checkpoint. Whenever the modular-indexer-committee obtains a new Bitcoin block, it generates a new checkpoint for the protocol and publishes it to the data availability layer for users to access. It is permissionless; anyone can operate its modular-indexer-committee for a given meta-protocol.
 
 ## Getting Started
 Welcome to the Modular Indexer setup. Ensure your machine is equipped for optimal performance with the recommended specifications:
@@ -49,7 +49,7 @@ go build
 # Run the modular-indexer-committee
 ./indexer-committee --committee --service
 
-# Run the modular-indexer-committee in test modee
+# Run the modular-indexer-committee in test mode
 ./indexer-committee --committee --service -t --blockheight 780010
 ```
 Below are the explanation for each of the command flags.
