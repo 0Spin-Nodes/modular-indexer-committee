@@ -3,9 +3,11 @@ package stateless
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 
 	"github.com/RiemaLabs/modular-indexer-committee/ord"
 	"github.com/RiemaLabs/modular-indexer-committee/ord/getter"
@@ -254,9 +256,6 @@ func NewQueues(getter getter.OrdGetter, header *Header, queryHash bool, startHei
 }
 
 func generateProofFromUpdate(header *Header, stateDiff *DiffState) (*verkle.Proof, error) {
-	if len(stateDiff.Access.Elements) == 0 {
-		log.Printf("len(stateDiff.Access.Elements) == 0")
-	}
 	var keys [][]byte
 	kvMap := make(KeyValueMap)
 	for _, elem := range stateDiff.Access.Elements {
@@ -285,13 +284,9 @@ func generateProofFromUpdate(header *Header, stateDiff *DiffState) (*verkle.Proo
 		}
 	}
 
-	// cfg := verkle.GetConfig()
-	conf, err := ipa.NewIPASettings()
-	if err != nil {
-		return nil, fmt.Errorf("creating multiproof: %w", err)
-	}
+	cfg := GetConfig()
 	tr := common.NewTranscript("vt")
-	mpArg, err := goipa.CreateMultiProof(tr, conf, pe.Cis, pe.Fis, pe.Zis)
+	mpArg, err := goipa.CreateMultiProof(tr, cfg.conf, pe.Cis, pe.Fis, pe.Zis)
 	if err != nil {
 		return nil, fmt.Errorf("creating multiproof: %w", err)
 	}
@@ -324,4 +319,111 @@ func generateProofFromUpdate(header *Header, stateDiff *DiffState) (*verkle.Proo
 		PostValues: postvals,
 	}
 	return proof, nil
+}
+
+var (
+	EmptyCodeHashPoint           verkle.Point
+	EmptyCodeHashFirstHalfValue  verkle.Fr
+	EmptyCodeHashSecondHalfValue verkle.Fr
+)
+
+const (
+	CodeHashVectorPosition     = 3 // Defined by the spec.
+	EmptyCodeHashFirstHalfIdx  = CodeHashVectorPosition * 2
+	EmptyCodeHashSecondHalfIdx = EmptyCodeHashFirstHalfIdx + 1
+)
+
+var (
+	FrZero verkle.Fr
+	FrOne  verkle.Fr
+
+	cfg     *Config
+	onceCfg sync.Once
+)
+
+func init() {
+	FrZero.SetZero()
+	FrOne.SetOne()
+}
+
+type IPAConfig struct {
+	conf *ipa.IPAConfig
+}
+
+type Config = IPAConfig
+
+func GetConfig() *Config {
+	onceCfg.Do(func() {
+		conf, err := ipa.NewIPASettings()
+		if err != nil {
+			panic(err)
+		}
+		cfg = &IPAConfig{conf: conf}
+
+		// Initialize the empty code cached values.
+		emptyHashCode, _ := hex.DecodeString("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
+		values := make([][]byte, verkle.NodeWidth)
+		values[CodeHashVectorPosition] = emptyHashCode
+		var c1poly [verkle.NodeWidth]verkle.Fr
+		if _, err := fillSuffixTreePoly(c1poly[:], values[:verkle.NodeWidth/2]); err != nil {
+			panic(err)
+		}
+		EmptyCodeHashPoint = *cfg.CommitToPoly(c1poly[:], 0)
+		EmptyCodeHashFirstHalfValue = c1poly[EmptyCodeHashFirstHalfIdx]
+		EmptyCodeHashSecondHalfValue = c1poly[EmptyCodeHashSecondHalfIdx]
+	})
+	return cfg
+}
+
+func (conf *IPAConfig) CommitToPoly(poly []verkle.Fr, _ int) *verkle.Point {
+	ret := conf.conf.Commit(poly)
+	return &ret
+}
+
+// fillSuffixTreePoly takes one of the two suffix tree and
+// builds the associated polynomial, to be used to compute
+// the corresponding C{1,2} commitment.
+func fillSuffixTreePoly(poly []verkle.Fr, values [][]byte) (int, error) {
+	count := 0
+	for idx, val := range values {
+		if val == nil {
+			continue
+		}
+		count++
+
+		if err := leafToComms(poly[(idx<<1)&0xFF:], val); err != nil {
+			return 0, err
+		}
+	}
+	return count, nil
+}
+
+// leafToComms turns a leaf into two commitments of the suffix
+// and extension tree.
+func leafToComms(poly []verkle.Fr, val []byte) error {
+	if len(val) == 0 {
+		return nil
+	}
+	if len(val) > verkle.LeafValueSize {
+		return fmt.Errorf("invalid leaf length %d, %v", len(val), val)
+	}
+	var (
+		valLoWithMarker [17]byte
+		loEnd           = 16
+		err             error
+	)
+	if len(val) < loEnd {
+		loEnd = len(val)
+	}
+	copy(valLoWithMarker[:loEnd], val[:loEnd])
+	valLoWithMarker[16] = 1 // 2**128
+	if err = verkle.FromLEBytes(&poly[0], valLoWithMarker[:]); err != nil {
+		return err
+	}
+	if len(val) >= 16 {
+		if err = verkle.FromLEBytes(&poly[1], val[16:]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
