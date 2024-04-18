@@ -43,6 +43,7 @@ func VerifyProof(queue *stateless.Queue) bool {
 		return true
 	}
 	vProof, _, err := verkle.SerializeProof(queue.LastStateProof)
+	log.Println("VerifyProof Queue vProof:", vProof)
 	if err != nil {
 		log.Println("[VerifyProof]: verkle.SerializeProof(queue.LastStateProof) failed")
 		return false
@@ -79,6 +80,7 @@ func RollingbackProof(queue *stateless.Queue) string {
 	}
 
 	vProof, _, err := verkle.SerializeProof(proofOfKeys)
+	log.Println("VerifyProof RollingbackProof vProof:", vProof)
 	if err != nil {
 		log.Printf("Failed to serialize proof due to %v", err)
 		return ""
